@@ -217,4 +217,231 @@ minikube stop
 Delete Minikube:
 minikube delete
 
+lab 7:
+🚀 LAB: Kubernetes Deployment & Service for Python App from Docker Hub
+✅ Prerequisites
+Make sure:
+minikube start --driver=docker
+kubectl get nodes
+Node status must be:
+Ready
+🟦 STEP 1 — Pull a Python Docker Image
+You can use a sample image from Docker Hub:
+docker pull dockersamples/flaskapp
+This confirms your Docker Hub access works.
+🟩 STEP 2 — Create Kubernetes Deployment
+Create a file:
+python-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-web-deployment
+  labels:
+    app: python-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: python-web
+  template:
+    metadata:
+      labels:
+        app: python-web
+    spec:
+      containers:
+        - name: python-web
+          image: dockersamples/flaskapp:latest
+          ports:
+            - containerPort: 5000
+Apply deployment:
+kubectl apply -f python-deployment.yaml
+Check status:
+kubectl get deployments
+kubectl get pods
+kubectl describe deployment python-web-deployment
+You should see 2 pods running.
+🟨 STEP 3 — Expose Deployment as a NodePort Service
+Create a file:
+python-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-web-service
+spec:
+  type: NodePort
+  selector:
+    app: python-web
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+Apply service:
+kubectl apply -f python-service.yaml
+Check services:
+kubectl get svc
+You will see something like:
+python-web-service   NodePort   10.111.34.27   <none>   5000:3xxxx/TCP
+(3xxxx is the auto-chosen NodePort)
+🌐 STEP 4 — Access the Python Web App
+Use Minikube:
+minikube service python-web-service --url
+Output example:
+http://127.0.0.1:32654
+Open this URL in your browser — your Python Flask app will load.
+🧹 STEP 5 — Cleanup After Lab
+kubectl delete deployment python-web-deployment
+kubectl delete svc python-web-service
+Stop Minikube:
+minikube stop
+Delete cluster:
+minikube delete
 
+
+lab 4:
+🚀 CI Pipeline Lab: Python App → GitHub Actions → Docker Hub
+✅ GOAL
+You will build a complete CI workflow that:
+Runs Python tests
+Builds a Docker image
+Pushes the image to Docker Hub
+(Optional) Creates version tags like v1.0.0
+🧰 PREREQUISITES
+GitHub account
+Docker Hub account
+Git installed
+Python 3.11+
+Docker Desktop (optional)
+🟦 STEP 1 — Create project folder
+mkdir python-ci-docker-lab
+cd python-ci-docker-lab
+🟩 STEP 2 — Create Application Files
+app.py
+def add(a, b):
+    return a + b
+
+if __name__ == "__main__":
+    print("Hello from Python CI Lab!")
+    print("2 + 3 =", add(2, 3))
+tests/test_app.py
+from app import add
+
+def test_add():
+    assert add(2, 3) == 5
+    assert add(-1, 1) == 0
+requirements.txt
+pytest==8.3.2
+Dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+CMD ["python", "app.py"]
+.gitignore
+__pycache__/
+.venv/
+.pytest_cache/
+.DS_Store
+*.pyc
+🟧 STEP 3 — Add GitHub Actions Workflow
+Create folder:
+mkdir -p .github/workflows
+Create:
+.github/workflows/ci-dockerhub.yml
+name: ci-dockerhub
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install deps
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      run: pytest -q
+
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/python-ci-lab
+        tags: |
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix=sha-,format=short
+          type=ref,event=tag
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/amd64
+🟨 STEP 4 — (Optional) Local testing
+python app.py
+pytest -q
+docker build -t yourname/python-ci-lab:local .
+docker run --rm yourname/python-ci-lab:local
+🟥 STEP 5 — Initialize Git & Push to GitHub
+git init
+git add .
+git commit -m "init lab"
+git branch -M main
+git remote add origin https://github.com/<your-username>/python-ci-docker-lab.git
+git push -u origin main
+🟪 STEP 6 — Add GitHub Secrets
+In GitHub → Repo → Settings → Secrets → Actions:
+Create:
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+🟩 STEP 7 — Watch CI Pipeline
+Go to:
+👉 GitHub → Actions → ci-dockerhub
+You will see steps:
+Checkout
+Install deps
+Run tests
+Build Docker
+Push to Docker Hub
+🟦 STEP 8 — Verify Image on Docker Hub
+Go to:
+👉 https://hub.docker.com/repository/docker/<username>/python-ci-lab
+Image should appear automatically.
+🟫 STEP 9 — Release with a tag (optional)
+git tag v1.0.0
+git push origin v1.0.0
+GitHub Actions will build a versioned Docker tag like:
+<user>/python-ci-lab:v1.0.0
